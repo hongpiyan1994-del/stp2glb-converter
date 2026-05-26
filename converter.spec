@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller 打包配置
-# 注意：Blender 不打包在内，用户需自行下载 blender.exe 放在 EXE 同目录
+# STP → GLB 转换工具
 
 import sys
 import os
@@ -13,31 +13,22 @@ a = Analysis(
     binaries=[],
     datas=[],
     hiddenimports=[
+        # dearpygui native C extensions (必须显式声明)
         'dearpygui',
         'dearpygui.dearpygui',
-        'struct',
-        'threading',
-        'subprocess',
-        'pathlib',
-        're',
-        'json',
-        'time',
-        'importlib',
-        'importlib.util',
+        'dearpygui.core',
+        'dearpygui.internal',
+        'dearpygui.demo',
+        # 标准库
+        'struct', 'threading', 'subprocess', 'pathlib',
+        're', 'json', 'time', 'ctypes', 'importlib', 'importlib.util',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
-        'matplotlib',
-        'numpy',
-        'PIL',
-        'cv2',
-        'torch',
-        'tensorflow',
-        'IPython',
-        'notebook',
-        'jupyter',
+        'matplotlib', 'numpy', 'PIL', 'cv2', 'torch', 'tensorflow',
+        'IPython', 'notebook', 'jupyter',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
