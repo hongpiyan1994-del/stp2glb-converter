@@ -8,17 +8,19 @@ from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
 
-# DearPyGUI 数据文件
-dpg_datas = collect_data_files(" dearpygui")
+# DearPyGUI 数据文件（修复：模块名无空格）
+dpg_datas = collect_data_files("dearpygui")
 
 a = Analysis(
     ['converter_gui.py'],
     pathex=[],
     binaries=[],
-    datas=[] + dpg_datas,
+    datas=dpg_datas,
     hiddenimports=[
         'dearpygui',
         'dearpygui.dearpygui',
+        'dearpygui.demo',
+        'dearpygui.internal',
         'struct',
         'threading',
         'subprocess',
@@ -26,6 +28,8 @@ a = Analysis(
         're',
         'json',
         'time',
+        'importlib',
+        'importlib.util',
     ],
     hookspath=[],
     hooksconfig={},
@@ -37,6 +41,8 @@ a = Analysis(
         'cv2',
         'torch',
         'tensorflow',
+        'IPython',
+        'notebook',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -62,14 +68,15 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,          # GUI 程序，无控制台
+    console=True,           # 调试模式：显示控制台输出
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='icon.ico' if os.path.exists('icon.ico') else None,
 )
+# 注释掉 icon（避免 icon.ico 不存在导致失败）
+# icon='icon.ico' if os.path.exists('icon.ico') else None,
 
 coll = COLLECT(
     exe,
