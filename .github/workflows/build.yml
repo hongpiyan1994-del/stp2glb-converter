@@ -1,0 +1,47 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号'
+        required: false
+        default: '1.0.0'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download Blender (portable)
+        shell: pwsh
+        run: |
+          $blenderVersion = "4.2.0"
+          $blenderUrl = "https://download.blender.org/release/Blender4.2/blender-$blenderVersion-windows-x64.zip"
+          Invoke-WebRequest -Uri $blenderUrl -OutFile blender.zip -UseBasicParsing
+          Expand-Archive -Path blender.zip -DestinationPath . -Force
+          Remove-Item blender.zip
+          $extractedDir = (Get-ChildItem -Directory | Where-Object { $_.Name -like "blender*" } | Select-Object -First 1).FullName
+          Move-Item $extractedDir blender          
+
+      - name: Build EXE with PyInstaller
+        run: pyinstaller converter.spec --noconfirm
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: STP2GLB_Converter
+          path: dist/
+          retention-days: 7
