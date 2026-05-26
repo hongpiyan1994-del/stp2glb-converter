@@ -188,12 +188,18 @@ def convert_stp_to_glb(stp_path, output_glb_path, blender_exe, status_callback):
     with open(script_path, "w", encoding="utf-8") as f:
         f.write(script)
 
+    # DIAGNOSTIC: log first 3 lines of script so we can see if it's valid
+    log("SCRIPT_CONTENT_START")
+    for i, line in enumerate(script.split("\n")[:5], 1):
+        log("SCRIPT_LINE%d: %s" % (i, repr(line[:80])))
+    log("SCRIPT_CONTENT_END")
+
     log("Blender: " + blender_exe + " STP: " + stp_path)
 
     try:
         p = subprocess.Popen(
             [blender_exe, "--background", "--python", script_path],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1,
         )
         out_lines = []
         while True:
