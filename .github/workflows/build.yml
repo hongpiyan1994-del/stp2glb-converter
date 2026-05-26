@@ -34,10 +34,15 @@ jobs:
           $extractedDir = Get-ChildItem -Directory | Where-Object { $_.Name -like "blender*" } | Select-Object -First 1
           if ($extractedDir) { Move-Item $extractedDir.FullName blender }          
 
+      - name: Verify Blender
+        run: |
+          if (Test-Path "./blender/blender.exe") { echo "Blender found" } else { echo "Blender NOT found"; exit 1 }          
+
       - name: Build EXE
         run: |
           python -m PyInstaller converter.spec --noconfirm 2>&1
           if ($LASTEXITCODE -ne 0) {
+            echo "SPEC FAILED, trying onefile..."
             python -m PyInstaller converter_gui.py --onefile --noconfirm --console 2>&1
           }          
 
