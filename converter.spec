@@ -1,9 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller 打包配置
-# STP → GLB 转换工具
+# STP → GLB 转换工具 - tkinter 版本（无 native 依赖）
 
-import sys
-import os
+import sys, os
 
 block_cipher = None
 
@@ -13,22 +12,17 @@ a = Analysis(
     binaries=[],
     datas=[],
     hiddenimports=[
-        # dearpygui native C extensions (必须显式声明)
-        'dearpygui',
-        'dearpygui.dearpygui',
-        'dearpygui.core',
-        'dearpygui.internal',
-        'dearpygui.demo',
-        # 标准库
         'struct', 'threading', 'subprocess', 'pathlib',
-        're', 'json', 'time', 'ctypes', 'importlib', 'importlib.util',
+        're', 'json', 'time', 'ctypes',
+        'importlib', 'importlib.util',
+        'tkinter', 'tkinter.filedialog', 'tkinter.messagebox', 'tkinter.ttk',
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
         'matplotlib', 'numpy', 'PIL', 'cv2', 'torch', 'tensorflow',
-        'IPython', 'notebook', 'jupyter',
+        'IPython', 'notebook', 'jupyter', 'dearpygui',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
