@@ -24,6 +24,7 @@ def log(msg):
     try:
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write("[%s] %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), msg))
+            f.flush()  # ensure written before subprocess
     except Exception:
         pass
 
@@ -143,47 +144,45 @@ def convert_stp_to_glb(stp_path, output_glb_path, blender_exe, status_callback):
     stp_esc = stp_path.replace("\\", "\\\\")
     out_esc = output_glb_path.replace("\\", "\\\\")
 
-    script = (
-        "import bpy, sys, addon_utils\n"
-        "# Find and enable STEP/IO_mesh_step addon\n"
-        "step_addon = None\n"
-        "for mod in addon_utils.module_keys():\n"
-        "    if 'step' in mod.lower() or 'io_mesh_step' in mod:\n"
-        "        step_addon = mod\n"
-        "        break\n"
-        "if step_addon:\n"
-        "    try:\n"
-        "        bpy.ops.preferences.addon_enable(module=step_addon)\n"
-        "        print('STEP addon enabled: ' + step_addon)\n"
-        "    except Exception as e:\n"
-        "        print('addon_enable error: ' + str(e))\n"
-        "else:\n"
-        "    print('STEP addon not found in available addons')\n"
-        "bpy.ops.object.select_all(action='SELECT')\n"
-        "bpy.ops.object.delete(use_global=False)\n"
-        "stp_path = r'%s'\n"
-        "try:\n"
-        "    bpy.ops.import_mesh.step(filepath=stp_path)\n"
-        "except Exception as e:\n"
-        "    print('IMPORT_ERROR:' + str(e))\n"
-        "    sys.exit(1)\n"
-        "for obj in bpy.data.objects:\n"
-        "    if obj.type == 'MESH':\n"
-        "        obj.select_set(True)\n"
-        "        bpy.context.view_layer.objects.active = obj\n"
-        "        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)\n"
-        "        bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_VOLUME')\n"
-        "out_path = r'%s'\n"
-        "try:\n"
-        "    bpy.ops.export_scene.gltf(filepath=out_path, export_format='GLB',\n"
-        "        export_draco=1, export_materials='EXPORT',\n"
-        "        export_colors=True, use_selection=False)\n"
-        "    print('CONVERT_SUCCESS')\n"
-        "except Exception as e:\n"
-        "    print('EXPORT_ERROR:' + str(e))\n"
-        "    sys.exit(1)\n"
-        % (stp_esc, out_esc)
-    )
+    lines = [
+        "import sys\n",
+        "print('SCRIPT_START')\n",
+        "import bpy, addon_utils\n",
+        "print('SCRIPT_AFTER_IMPORTS')\n",
+        "# Enable STEP addon\n",
+        "for m in addon_utils.module_keys():\n",
+        "    if 'step' in m.lower():\n",
+        "        try:\n",
+        "            addon_utils.enable(m, persistent=True)\n",
+        "            print('STEP addon enabled: ' + m)\n",
+        "        except Exception as e:\n",
+        "            print('addon_enable error: ' + str(e))\n",
+        "        break\n",
+        "else:\n",
+        "    print('NO STEP ADDON FOUND')\n",
+        "print('STEP_ADDON_DONE')\n",
+        "bpy.ops.object.select_all(action='SELECT')\n",
+        "bpy.ops.object.delete(use_global=False)\n",
+        ("stp_path = r'%s'\n" % stp_esc) + "print('ABOUT_TO_IMPORT')\n",
+        "try:\n",
+        "    bpy.ops.import_mesh.step(filepath=stp_path)\n",
+        "    print('IMPORT_OK')\n",
+        "except Exception as e:\n",
+        "    print('IMPORT_ERROR:' + str(e))\n",
+        "    sys.exit(1)\n",
+        "print('IMPORT_DONE')\n",
+        "bpy.ops.object.select_all(action='SELECT')\n",
+        ("out_path = r'%s'\n" % out_esc),
+        "try:\n",
+        "    bpy.ops.export_scene.gltf(filepath=out_path, export_format='GLB',\n",
+        "        export_draco=0, export_materials='EXPORT',\n",
+        "        export_colors=True, use_selection=False)\n",
+        "    print('CONVERT_SUCCESS')\n",
+        "except Exception as e:\n",
+        "    print('EXPORT_ERROR:' + str(e))\n",
+        "    sys.exit(1)\n",
+    ]
+    script = "".join(lines)
     script_path = output_glb_path + ".pyconvert"
     with open(script_path, "w", encoding="utf-8") as f:
         f.write(script)
@@ -194,7 +193,7 @@ def convert_stp_to_glb(stp_path, output_glb_path, blender_exe, status_callback):
         log("SCRIPT_LINE%d: %s" % (i, repr(line[:80])))
     log("SCRIPT_CONTENT_END")
 
-    log("Blender: " + blender_exe + " STP: " + stp_path)
+    log("Blender: " + blender_exe + " STP: " + stp_path + " SCRIPT: " + script_path)
 
     try:
         p = subprocess.Popen(
