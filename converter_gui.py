@@ -145,6 +145,14 @@ def convert_stp_to_glb(stp_path, output_glb_path, blender_exe, status_callback):
 
     script = (
         "import bpy, sys\n"
+        "import addon_utils\n"  # noqa: F401
+        "# Enable STEP addon if not already enabled\n"
+        "for mod in addon_utils.module_keys():\n"
+        "    if 'io_mesh_step' in mod:\n"
+        "        try:\n"
+        "            addon_utils.enable(mod, persistent=True)\n"
+        "        except Exception:\n"
+        "            pass\n"
         "bpy.ops.object.select_all(action='SELECT')\n"
         "bpy.ops.object.delete(use_global=False)\n"
         "stp_path = r'%s'\n"
