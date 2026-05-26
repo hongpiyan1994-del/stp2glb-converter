@@ -243,7 +243,7 @@ frame_top.pack(fill=X, padx=20, pady=(20, 5))
 make_label(frame_top, "STP -> GLB 转换工具", font=TITLE_FONT, fg=ACCENT).pack(anchor=W)
 make_label(frame_top, "Powered by Blender + Python tkinter | 崩溃日志: startup.log",
            font=SMALL_FONT, fg="#808080").pack(anchor=W)
-ttk.Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20, pady=5)
+Frame(root, bg=BG, height=1).pack(fill=X, padx=20, pady=5)
 
 # ─── Blender 选择 ───
 f_blender = Frame(root, bg=BG)
@@ -253,7 +253,7 @@ f_blender_row = Frame(f_blender, bg=BG)
 f_blender_row.pack(fill=X, pady=3)
 blender_var = StringVar()
 Entry(f_blender_row, textvariable=blender_var, font=MONO_FONT, bg=DARK_ENTRY, fg=FG,
-      insertbackground=FG, width=52, state=DISABLED).pack(side=LEFT, fill=X, expand=True)
+      state=DISABLED, fg=FG, disabledforeground=FG, disabledbackground=DARK_ENTRY, width=52).pack(side=LEFT, fill=X, expand=True)
 Button(f_blender_row, text="浏览...", bg=BTN_BLUE, fg=FG,
        activebackground=BTN_BLUE_HOVER, relief=FLAT, width=8).pack(side=LEFT, padx=(5, 0))
 
@@ -261,7 +261,7 @@ blender_status_var = StringVar(value="未选择")
 Label(f_blender, text="状态:", font=SMALL_FONT, fg="#808080", bg=BG).pack(anchor=W)
 Label(f_blender, textvariable=blender_status_var, font=SMALL_FONT,
       fg=ORANGE, bg=BG, anchor=W).pack(anchor=W)
-ttk.Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20, pady=5)
+Frame(root, bg=BG, height=1).pack(fill=X, padx=20, pady=5)
 
 # ─── STP 文件选择 ───
 f_stp = Frame(root, bg=BG)
@@ -271,14 +271,14 @@ f_stp_row = Frame(f_stp, bg=BG)
 f_stp_row.pack(fill=X, pady=3)
 stp_var = StringVar()
 Entry(f_stp_row, textvariable=stp_var, font=MONO_FONT, bg=DARK_ENTRY, fg=FG,
-      insertbackground=FG, width=52, state=DISABLED).pack(side=LEFT, fill=X, expand=True)
+      state=DISABLED, fg=FG, disabledforeground=FG, disabledbackground=DARK_ENTRY, width=52).pack(side=LEFT, fill=X, expand=True)
 Button(f_stp_row, text="浏览...", bg=BTN_BLUE, fg=FG,
        activebackground=BTN_BLUE_HOVER, relief=FLAT, width=8).pack(side=LEFT, padx=(5, 0))
 
 info_var = StringVar(value="等待选择文件...")
 Label(f_stp, textvariable=info_var, font=SMALL_FONT, fg="#808080", bg=BG,
       anchor=W, wraplength=640).pack(anchor=W)
-ttk.Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20, pady=5)
+Frame(root, bg=BG, height=1).pack(fill=X, padx=20, pady=5)
 
 # ─── 输出路径 ───
 f_out = Frame(root, bg=BG)
@@ -288,17 +288,17 @@ f_out_row = Frame(f_out, bg=BG)
 f_out_row.pack(fill=X, pady=3)
 out_var = StringVar()
 Entry(f_out_row, textvariable=out_var, font=MONO_FONT, bg=DARK_ENTRY, fg=FG,
-      insertbackground=FG, width=52, state=DISABLED).pack(side=LEFT, fill=X, expand=True)
+      state=DISABLED, fg=FG, disabledforeground=FG, disabledbackground=DARK_ENTRY, width=52).pack(side=LEFT, fill=X, expand=True)
 Button(f_out_row, text="浏览...", bg=BTN_BLUE, fg=FG,
        activebackground=BTN_BLUE_HOVER, relief=FLAT, width=8).pack(side=LEFT, padx=(5, 0))
-ttk.Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20, pady=(5, 0))
+Frame(root, bg=BG, height=1).pack(fill=X, padx=20, pady=(5, 0))
 
 # ─── 进度条 ───
 f_progress = Frame(root, bg=BG)
 f_progress.pack(fill=X, padx=20, pady=(10, 0))
 progress_var = DoubleVar(value=0)
 ttk.Progressbar(f_progress, variable=progress_var, mode='determinate',
-                length=640, height=18).pack()
+                length=640).pack()
 progress_label_var = StringVar(value="")
 Label(f_progress, textvariable=progress_label_var, font=SMALL_FONT,
       fg="#808080", bg=BG).pack()
@@ -313,7 +313,7 @@ start_btn.pack(side=LEFT)
 cancel_btn = Button(f_buttons, text="取消", font=("Segoe UI", 10),
                    state=DISABLED, bg=BTN_GREY, fg=FG, relief=FLAT, width=8)
 cancel_btn.pack(side=LEFT, padx=(5, 0))
-ttk.Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20)
+Frame(root, bg=BG, height=1).pack(fill=X, padx=20)
 
 # ─── 状态栏 ───
 f_status = Frame(root, bg=BG)
