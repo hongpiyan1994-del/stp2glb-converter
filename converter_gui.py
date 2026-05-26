@@ -77,17 +77,22 @@ def find_blender():
         for d in [base, exe_dir]:
             candidates.append(d / "blender" / "blender.exe")
             candidates.append(d / "blender.exe")
+            # Also check Blender's own folder structure
+            candidates.append(d / "blender-4.2.0-windows-x64" / "blender.exe")
     else:
         candidates.append(Path(__file__).parent / "blender" / "blender.exe")
         candidates.append(Path(__file__).parent / "blender.exe")
+
     pf = os.environ.get("ProgramFiles", "")
     if pf:
         candidates.append(Path(pf) / "Blender" / "blender.exe")
+        candidates.append(Path(pf) / "Blender Foundation" / "Blender 4.2" / "blender.exe")
+
     for p in candidates:
         if p.exists():
             log("Blender found: " + str(p))
             return str(p)
-    log("No blender.exe found")
+    log("No blender.exe found in: " + str(candidates))
     return ""
 
 
@@ -133,7 +138,7 @@ def parse_glb_stats(path):
 
 def convert_stp_to_glb(stp_path, output_glb_path, blender_exe, status_callback):
     if not blender_exe or not Path(blender_exe).exists():
-        return False, "blender.exe 未找到"
+        return False, "blender.exe 未找到: " + str(blender_exe)
 
     stp_esc = stp_path.replace("\\", "\\\\")
     out_esc = output_glb_path.replace("\\", "\\\\")
@@ -179,13 +184,15 @@ def convert_stp_to_glb(stp_path, output_glb_path, blender_exe, status_callback):
         out_lines = []
         while True:
             line = p.stdout.readline()
-            if not line and p.poll() is not None:
+            if not line:
                 break
+            line = line.strip()
             if line:
-                line = line.strip()
                 out_lines.append(line)
                 if status_callback:
-                    status_callback(line[:80])
+                    status_callback(line)
+            if p.poll() is not None:
+                break
 
         stderr = p.stderr.read()
         rc = p.wait()
@@ -194,13 +201,15 @@ def convert_stp_to_glb(stp_path, output_glb_path, blender_exe, status_callback):
         except Exception:
             pass
 
+        log("Blender rc=" + str(rc) + " stdout_lines=" + str(out_lines))
+
         if rc != 0:
             msg = "\n".join(out_lines + [stderr])
             for pat in [r"IMPORT_ERROR:(.+)", r"EXPORT_ERROR:(.+)", r"Error: (.+)"]:
                 m = re.search(pat, msg)
                 if m:
                     return False, m.group(1).strip()
-            return False, "Blender exit code: " + str(rc)
+            return False, "Blender exit code: " + str(rc) + " msg: " + msg[:200]
 
         if not os.path.exists(output_glb_path):
             return False, "GLB 未生成"
@@ -209,7 +218,7 @@ def convert_stp_to_glb(stp_path, output_glb_path, blender_exe, status_callback):
         return True, output_glb_path
 
     except Exception as e:
-        log("convert error: " + str(e))
+        log("convert exception: " + str(e))
         return False, str(e)
 
 
@@ -223,46 +232,30 @@ root.configure(bg=BG)
 def sep():
     Frame(root, bg=BG, height=1).pack(fill=X, padx=20)
 
-def lbl(parent, text, font=None, fg=None, bg=BG, anchor=None, wraplength=None):
-    kw = {"font": font or LABEL_FONT, "fg": fg or FG, "bg": bg}
-    if anchor is not None:
-        kw["anchor"] = anchor
-    if wraplength:
-        kw["wraplength"] = wraplength
-    return Label(parent, **kw)
-
-def entry_row(parent, row_font=MONO_FONT):
-    fr = Frame(parent, bg=BG)
-    fr.pack(fill=X, pady=3)
-    var = StringVar()
-    # Use normal Entry (readonly via bg color), not DISABLED which causes issues
-    en = Entry(fr, textvariable=var, font=row_font, bg=DARK_ENTRY, fg=FG,
-              insertbackground=FG, width=52)
-    en.pack(side=LEFT, fill=X, expand=True)
-    return var, fr
-
 
 # ─── Header ───
 fr_top = Frame(root, bg=BG)
 fr_top.pack(fill=X, padx=20, pady=(20, 5))
-lbl(fr_top, "STP -> GLB 转换工具", font=TITLE_FONT, fg=ACCENT).pack(anchor=W)
-lbl(fr_top, "Powered by Blender + Python tkinter | 崩溃日志: startup.log",
-    font=SMALL_FONT, fg="#808080").pack(anchor=W)
+Label(fr_top, text="STP -> GLB 转换工具", font=TITLE_FONT, fg=ACCENT, bg=BG, anchor=W).pack(anchor=W)
+Label(fr_top, text="Powered by Blender + Python tkinter | 崩溃日志: startup.log",
+      font=SMALL_FONT, fg="#808080", bg=BG, anchor=W).pack(anchor=W)
 sep()
 
 # ─── Blender 选择 ───
 fr_blender = Frame(root, bg=BG)
 fr_blender.pack(fill=X, padx=20, pady=5)
-lbl(fr_blender, "第一步: 选择 blender.exe (必填)").pack(anchor=W)
+Label(fr_blender, text="第一步: 选择 blender.exe (必填)",
+      font=LABEL_FONT, fg=FG, bg=BG, anchor=W).pack(anchor=W)
 blender_var = StringVar()
 fr_br = Frame(fr_blender, bg=BG)
 fr_br.pack(fill=X, pady=3)
-Entry(fr_br, textvariable=blender_var, font=MONO_FONT, bg=DARK_ENTRY, fg=FG,
-      insertbackground=FG, width=52, state=DISABLED).pack(side=LEFT, fill=X, expand=True)
+# Use Label instead of Entry for read-only path display (Entry DISABLED can't be updated)
+blender_path_lbl = Label(fr_br, text="(未选择)", font=MONO_FONT, bg=DARK_ENTRY, fg=FG,
+                         anchor=W, width=52)
+blender_path_lbl.pack(side=LEFT, fill=X, expand=True)
 Button(fr_br, text="浏览...", bg=BTN_BLUE, fg=FG,
        activebackground=BTN_BLUE_HOVER, relief=FLAT, width=8).pack(side=LEFT, padx=(5, 0))
-blender_status_var = StringVar(value="未选择")
-Label(fr_blender, text="状态:", font=SMALL_FONT, fg="#808080", bg=BG).pack(anchor=W)
+blender_status_var = StringVar(value="状态: 未选择")
 Label(fr_blender, textvariable=blender_status_var, font=SMALL_FONT,
       fg=ORANGE, bg=BG, anchor=W).pack(anchor=W)
 sep()
@@ -270,28 +263,32 @@ sep()
 # ─── STP 文件选择 ───
 fr_stp = Frame(root, bg=BG)
 fr_stp.pack(fill=X, padx=20, pady=5)
-lbl(fr_stp, "第二步: 选择 STP/STEP 文件").pack(anchor=W)
+Label(fr_stp, text="第二步: 选择 STP/STEP 文件",
+      font=LABEL_FONT, fg=FG, bg=BG, anchor=W).pack(anchor=W)
 stp_var = StringVar()
 fr_sr = Frame(fr_stp, bg=BG)
 fr_sr.pack(fill=X, pady=3)
-Entry(fr_sr, textvariable=stp_var, font=MONO_FONT, bg=DARK_ENTRY, fg=FG,
-      insertbackground=FG, width=52, state=DISABLED).pack(side=LEFT, fill=X, expand=True)
+stp_path_lbl = Label(fr_sr, text="(未选择文件)", font=MONO_FONT, bg=DARK_ENTRY, fg=FG,
+                      anchor=W, width=52)
+stp_path_lbl.pack(side=LEFT, fill=X, expand=True)
 Button(fr_sr, text="浏览...", bg=BTN_BLUE, fg=FG,
        activebackground=BTN_BLUE_HOVER, relief=FLAT, width=8).pack(side=LEFT, padx=(5, 0))
 info_var = StringVar(value="等待选择文件...")
-Label(fr_stp, textvariable=info_var, font=SMALL_FONT, fg="#808080", bg=BG,
-      anchor=W, wraplength=640).pack(anchor=W)
+info_lbl = Label(fr_stp, textvariable=info_var, font=SMALL_FONT, fg="#808080", bg=BG, anchor=W, wraplength=640)
+info_lbl.pack(anchor=W)
 sep()
 
 # ─── 输出路径 ───
 fr_out = Frame(root, bg=BG)
 fr_out.pack(fill=X, padx=20, pady=5)
-lbl(fr_out, "第三步: 保存 GLB 位置").pack(anchor=W)
+Label(fr_out, text="第三步: 保存 GLB 位置",
+      font=LABEL_FONT, fg=FG, bg=BG, anchor=W).pack(anchor=W)
 out_var = StringVar()
 fr_or = Frame(fr_out, bg=BG)
 fr_or.pack(fill=X, pady=3)
-Entry(fr_or, textvariable=out_var, font=MONO_FONT, bg=DARK_ENTRY, fg=FG,
-      insertbackground=FG, width=52, state=DISABLED).pack(side=LEFT, fill=X, expand=True)
+out_path_lbl = Label(fr_or, text="(未设置)", font=MONO_FONT, bg=DARK_ENTRY, fg=FG,
+                     anchor=W, width=52)
+out_path_lbl.pack(side=LEFT, fill=X, expand=True)
 Button(fr_or, text="浏览...", bg=BTN_BLUE, fg=FG,
        activebackground=BTN_BLUE_HOVER, relief=FLAT, width=8).pack(side=LEFT, padx=(5, 0))
 sep()
@@ -301,7 +298,7 @@ fr_prog = Frame(root, bg=BG)
 fr_prog.pack(fill=X, padx=20, pady=(10, 0))
 progress_var = DoubleVar(value=0)
 ttk.Progressbar(fr_prog, variable=progress_var, mode="determinate",
-                length=640).pack()
+                 length=640).pack()
 progress_label_var = StringVar(value="")
 Label(fr_prog, textvariable=progress_label_var, font=SMALL_FONT,
       fg="#808080", bg=BG).pack()
@@ -315,7 +312,7 @@ start_btn = Button(fr_btn, text="开始转换", font=("Segoe UI", 10, "bold"),
                    relief=FLAT, width=12, state=DISABLED)
 start_btn.pack(side=LEFT)
 cancel_btn = Button(fr_btn, text="取消", font=("Segoe UI", 10),
-                   state=DISABLED, bg=BTN_GREY, fg=FG, relief=FLAT, width=8)
+                     state=DISABLED, bg=BTN_GREY, fg=FG, relief=FLAT, width=8)
 cancel_btn.pack(side=LEFT, padx=(5, 0))
 
 # ─── 状态栏 ───
@@ -337,6 +334,7 @@ def on_blender_browse():
     if not path:
         return
     blender_var.set(path)
+    blender_path_lbl.config(text=path)
     ok, msg = check_blender(path)
     blender_status_var.set(msg)
     Label(fr_blender, textvariable=blender_status_var, font=SMALL_FONT,
@@ -355,29 +353,32 @@ def on_stp_browse():
     if not path:
         return
     stp_var.set(path)
+    stp_path_lbl.config(text=path)
     info = get_stp_info(path)
     if "error" not in info:
         samples = ", ".join(info.get("samples", [])[:5])
         info_var.set("零件数: %d 个 | 大小: %.1f MB | 示例: %s" % (
             info["parts"], info["size_mb"], samples))
-        Label(fr_stp, textvariable=info_var, font=SMALL_FONT, fg=GREEN, bg=BG,
-              anchor=W, wraplength=640).pack(anchor=W)
-        out_var.set(str(Path(path).with_suffix(".glb")))
+        info_lbl.config(fg=GREEN)
+        out_path = str(Path(path).with_suffix(".glb"))
+        out_var.set(out_path)
+        out_path_lbl.config(text=out_path)
     else:
         info_var.set("读取失败: " + info["error"])
-        Label(fr_stp, textvariable=info_var, font=SMALL_FONT, fg=RED, bg=BG,
-              anchor=W, wraplength=640).pack(anchor=W)
+        info_lbl.config(fg=RED)
 
 
 def on_output_browse():
+    init_dir = os.path.dirname(stp_var.get()) if stp_var.get() else None
     path = filedialog.asksaveasfilename(
         title="保存 GLB 文件",
         defaultextension=".glb",
         filetypes=[("GLB 文件", "*.glb"), ("所有文件", "*.*")],
-        initialdir=os.path.dirname(stp_var.get()) if stp_var.get() else None,
+        initialdir=init_dir,
     )
     if path:
         out_var.set(path)
+        out_path_lbl.config(text=path)
 
 
 def do_convert():
@@ -392,10 +393,11 @@ def do_convert():
     cancel_btn.config(state=NORMAL)
     progress_var.set(0)
     status_var.set("正在转换，请稍候...")
+    info_lbl.config(fg="#808080")
 
     def worker():
         def cb(line):
-            root.after(0, lambda: status_var.set(line[:80] if line else "处理中..."))
+            root.after(0, lambda: status_var.set(str(line)[:80] if line else "处理中..."))
 
         ok, result = convert_stp_to_glb(stp, out, blender, cb)
 
@@ -405,7 +407,9 @@ def do_convert():
             root.after(0, lambda: status_var.set(
                 "转换成功！%.1f MB\n%s" % (info.get("size_mb", 0), result)))
         else:
-            root.after(0, lambda: status_var.set("失败: " + result))
+            root.after(0, lambda: progress_var.set(0))
+            root.after(0, lambda: status_var.set("转换失败: " + result))
+            info_lbl.config(fg=RED)
 
         root.after(0, lambda: start_btn.config(state=NORMAL))
         root.after(0, lambda: cancel_btn.config(state=DISABLED))
@@ -425,6 +429,7 @@ log("Starting Blender auto-detect...")
 auto_blender = find_blender()
 if auto_blender:
     blender_var.set(auto_blender)
+    blender_path_lbl.config(text=auto_blender)
     ok, msg = check_blender(auto_blender)
     blender_status_var.set(msg)
     Label(fr_blender, textvariable=blender_status_var, font=SMALL_FONT,
