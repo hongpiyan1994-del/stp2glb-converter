@@ -47,9 +47,26 @@ log("=" * 40)
 log("Startup: " + sys.argv[0])
 log("Python: " + sys.version)
 
-# ─── 全局配置 ───
+# ─── 颜色常量 ───
+BG = "#1e1e1e"
+FG = "#d4d4d4"
+ACCENT = "#007acc"
+GREEN = "#4ec9b0"
+RED = "#f14c4c"
+ORANGE = "#cca700"
+DARK_ENTRY = "#2d2d2d"
+BTN_BLUE = "#0e639c"
+BTN_BLUE_HOVER = "#1177bb"
+BTN_GREY = "#3c3c3c"
+
+TITLE_FONT = ("Segoe UI", 15, "bold")
+LABEL_FONT = ("Segoe UI", 10)
+MONO_FONT = ("Consolas", 9)
+SMALL_FONT = ("Segoe UI", 8)
+
 VERSION = "1.0.0"
 SUPPORTED = [("STP/STEP 文件", "*.stp *.step *.STP *.STEP"), ("所有文件", "*.*")]
+
 
 # ─── Blender 检测 ───
 def find_blender():
@@ -57,20 +74,15 @@ def find_blender():
     if getattr(sys, "frozen", False):
         base = Path(sys._MEIPASS)
         exe_dir = Path(sys.argv[0]).parent
-        candidates += [
-            base / "blender" / "blender.exe",
-            base / "blender.exe",
-            exe_dir / "blender" / "blender.exe",
-            exe_dir / "blender.exe",
-        ]
+        for d in [base, exe_dir]:
+            candidates.append(d / "blender" / "blender.exe")
+            candidates.append(d / "blender.exe")
     else:
-        candidates += list((Path(__file__).parent / "blender" / "blender.exe",
-                          Path(__file__).parent / "blender.exe"))
-
+        candidates.append(Path(__file__).parent / "blender" / "blender.exe")
+        candidates.append(Path(__file__).parent / "blender.exe")
     pf = os.environ.get("ProgramFiles", "")
     if pf:
         candidates.append(Path(pf) / "Blender" / "blender.exe")
-
     for p in candidates:
         if p.exists():
             log("Blender found: " + str(p))
@@ -93,7 +105,6 @@ def check_blender(path):
         return False, str(e)
 
 
-# ─── STP 信息读取 ───
 def get_stp_info(path):
     try:
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
@@ -120,14 +131,14 @@ def parse_glb_stats(path):
         return {"error": str(e)}
 
 
-# ─── Blender 转换核心 ───
 def convert_stp_to_glb(stp_path, output_glb_path, blender_exe, status_callback):
     if not blender_exe or not Path(blender_exe).exists():
         return False, "blender.exe 未找到"
 
-    _sp = "__STP__"
-    _op = "__OUT__"
-    _tpl = (
+    stp_esc = stp_path.replace("\\", "\\\\")
+    out_esc = output_glb_path.replace("\\", "\\\\")
+
+    script = (
         "import bpy, sys\n"
         "bpy.ops.object.select_all(action='SELECT')\n"
         "bpy.ops.object.delete(use_global=False)\n"
@@ -143,24 +154,22 @@ def convert_stp_to_glb(stp_path, output_glb_path, blender_exe, status_callback):
         "        bpy.context.view_layer.objects.active = obj\n"
         "        bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)\n"
         "        bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_VOLUME')\n"
-        "out = r'%s'\n"
+        "out_path = r'%s'\n"
         "try:\n"
-        "    bpy.ops.export_scene.gltf(filepath=out, export_format='GLB',\n"
+        "    bpy.ops.export_scene.gltf(filepath=out_path, export_format='GLB',\n"
         "        export_draco=1, export_materials='EXPORT',\n"
         "        export_colors=True, use_selection=False)\n"
         "    print('CONVERT_SUCCESS')\n"
         "except Exception as e:\n"
         "    print('EXPORT_ERROR:' + str(e))\n"
         "    sys.exit(1)\n"
-        % (_sp, _op)
+        % (stp_esc, out_esc)
     )
-    script = _tpl.replace(_sp, stp_path).replace(_op, output_glb_path)
     script_path = output_glb_path + ".pyconvert"
     with open(script_path, "w", encoding="utf-8") as f:
         f.write(script)
 
-    log("Blender: " + blender_exe)
-    log("STP: " + stp_path + " -> " + output_glb_path)
+    log("Blender: " + blender_exe + " STP: " + stp_path)
 
     try:
         p = subprocess.Popen(
@@ -209,117 +218,112 @@ root = Tk()
 root.title("STP -> GLB 转换工具 v" + VERSION)
 root.geometry("680x520")
 root.resizable(False, False)
-root.configure(bg="#1e1e1e")
+root.configure(bg=BG)
 
-BG = "#1e1e1e"
-FG = "#d4d4d4"
-ACCENT = "#007acc"
-GREEN = "#4ec9b0"
-RED = "#f14c4c"
-ORANGE = "#cca700"
-DARK_ENTRY = "#2d2d2d"
-BTN_BLUE = "#0e639c"
-BTN_BLUE_HOVER = "#1177bb"
-BTN_GREY = "#3c3c3c"
+def sep():
+    Frame(root, bg=BG, height=1).pack(fill=X, padx=20)
 
-TITLE_FONT = ("Segoe UI", 15, "bold")
-LABEL_FONT = ("Segoe UI", 10)
-MONO_FONT = ("Consolas", 9)
-SMALL_FONT = ("Segoe UI", 8)
-
-
-def make_label(parent, text, font=None, fg=FG, bg=BG, anchor=W, wraplength=None, **kw):
-    kw_conf = {"font": font or LABEL_FONT, "fg": fg, "bg": bg, "anchor": anchor}
+def lbl(parent, text, font=None, fg=None, bg=BG, anchor=None, wraplength=None):
+    kw = {"font": font or LABEL_FONT, "fg": fg or FG, "bg": bg}
+    if anchor is not None:
+        kw["anchor"] = anchor
     if wraplength:
-        kw_conf["wraplength"] = wraplength
-    lbl = Label(parent, **kw_conf, **kw)
-    lbl.configure(text=text)
-    return lbl
+        kw["wraplength"] = wraplength
+    return Label(parent, **kw)
+
+def entry_row(parent, row_font=MONO_FONT):
+    fr = Frame(parent, bg=BG)
+    fr.pack(fill=X, pady=3)
+    var = StringVar()
+    # Use normal Entry (readonly via bg color), not DISABLED which causes issues
+    en = Entry(fr, textvariable=var, font=row_font, bg=DARK_ENTRY, fg=FG,
+              insertbackground=FG, width=52)
+    en.pack(side=LEFT, fill=X, expand=True)
+    return var, fr
 
 
 # ─── Header ───
-frame_top = Frame(root, bg=BG)
-frame_top.pack(fill=X, padx=20, pady=(20, 5))
-make_label(frame_top, "STP -> GLB 转换工具", font=TITLE_FONT, fg=ACCENT).pack(anchor=W)
-make_label(frame_top, "Powered by Blender + Python tkinter | 崩溃日志: startup.log",
-           font=SMALL_FONT, fg="#808080").pack(anchor=W)
-Frame(root, bg=BG, height=1).pack(fill=X, padx=20, pady=5)
+fr_top = Frame(root, bg=BG)
+fr_top.pack(fill=X, padx=20, pady=(20, 5))
+lbl(fr_top, "STP -> GLB 转换工具", font=TITLE_FONT, fg=ACCENT).pack(anchor=W)
+lbl(fr_top, "Powered by Blender + Python tkinter | 崩溃日志: startup.log",
+    font=SMALL_FONT, fg="#808080").pack(anchor=W)
+sep()
 
 # ─── Blender 选择 ───
-f_blender = Frame(root, bg=BG)
-f_blender.pack(fill=X, padx=20, pady=5)
-make_label(f_blender, "第一步: 选择 blender.exe (必填)").pack(anchor=W)
-f_blender_row = Frame(f_blender, bg=BG)
-f_blender_row.pack(fill=X, pady=3)
+fr_blender = Frame(root, bg=BG)
+fr_blender.pack(fill=X, padx=20, pady=5)
+lbl(fr_blender, "第一步: 选择 blender.exe (必填)").pack(anchor=W)
 blender_var = StringVar()
-Entry(f_blender_row, textvariable=blender_var, font=MONO_FONT, bg=DARK_ENTRY, fg=FG,
-      state=DISABLED, fg=FG, disabledforeground=FG, disabledbackground=DARK_ENTRY, width=52).pack(side=LEFT, fill=X, expand=True)
-Button(f_blender_row, text="浏览...", bg=BTN_BLUE, fg=FG,
+fr_br = Frame(fr_blender, bg=BG)
+fr_br.pack(fill=X, pady=3)
+Entry(fr_br, textvariable=blender_var, font=MONO_FONT, bg=DARK_ENTRY, fg=FG,
+      insertbackground=FG, width=52, state=DISABLED).pack(side=LEFT, fill=X, expand=True)
+Button(fr_br, text="浏览...", bg=BTN_BLUE, fg=FG,
        activebackground=BTN_BLUE_HOVER, relief=FLAT, width=8).pack(side=LEFT, padx=(5, 0))
-
 blender_status_var = StringVar(value="未选择")
-Label(f_blender, text="状态:", font=SMALL_FONT, fg="#808080", bg=BG).pack(anchor=W)
-Label(f_blender, textvariable=blender_status_var, font=SMALL_FONT,
+Label(fr_blender, text="状态:", font=SMALL_FONT, fg="#808080", bg=BG).pack(anchor=W)
+Label(fr_blender, textvariable=blender_status_var, font=SMALL_FONT,
       fg=ORANGE, bg=BG, anchor=W).pack(anchor=W)
-Frame(root, bg=BG, height=1).pack(fill=X, padx=20, pady=5)
+sep()
 
 # ─── STP 文件选择 ───
-f_stp = Frame(root, bg=BG)
-f_stp.pack(fill=X, padx=20, pady=5)
-make_label(f_stp, "第二步: 选择 STP/STEP 文件").pack(anchor=W)
-f_stp_row = Frame(f_stp, bg=BG)
-f_stp_row.pack(fill=X, pady=3)
+fr_stp = Frame(root, bg=BG)
+fr_stp.pack(fill=X, padx=20, pady=5)
+lbl(fr_stp, "第二步: 选择 STP/STEP 文件").pack(anchor=W)
 stp_var = StringVar()
-Entry(f_stp_row, textvariable=stp_var, font=MONO_FONT, bg=DARK_ENTRY, fg=FG,
-      state=DISABLED, fg=FG, disabledforeground=FG, disabledbackground=DARK_ENTRY, width=52).pack(side=LEFT, fill=X, expand=True)
-Button(f_stp_row, text="浏览...", bg=BTN_BLUE, fg=FG,
+fr_sr = Frame(fr_stp, bg=BG)
+fr_sr.pack(fill=X, pady=3)
+Entry(fr_sr, textvariable=stp_var, font=MONO_FONT, bg=DARK_ENTRY, fg=FG,
+      insertbackground=FG, width=52, state=DISABLED).pack(side=LEFT, fill=X, expand=True)
+Button(fr_sr, text="浏览...", bg=BTN_BLUE, fg=FG,
        activebackground=BTN_BLUE_HOVER, relief=FLAT, width=8).pack(side=LEFT, padx=(5, 0))
-
 info_var = StringVar(value="等待选择文件...")
-Label(f_stp, textvariable=info_var, font=SMALL_FONT, fg="#808080", bg=BG,
+Label(fr_stp, textvariable=info_var, font=SMALL_FONT, fg="#808080", bg=BG,
       anchor=W, wraplength=640).pack(anchor=W)
-Frame(root, bg=BG, height=1).pack(fill=X, padx=20, pady=5)
+sep()
 
 # ─── 输出路径 ───
-f_out = Frame(root, bg=BG)
-f_out.pack(fill=X, padx=20, pady=5)
-make_label(f_out, "第三步: 保存 GLB 位置").pack(anchor=W)
-f_out_row = Frame(f_out, bg=BG)
-f_out_row.pack(fill=X, pady=3)
+fr_out = Frame(root, bg=BG)
+fr_out.pack(fill=X, padx=20, pady=5)
+lbl(fr_out, "第三步: 保存 GLB 位置").pack(anchor=W)
 out_var = StringVar()
-Entry(f_out_row, textvariable=out_var, font=MONO_FONT, bg=DARK_ENTRY, fg=FG,
-      state=DISABLED, fg=FG, disabledforeground=FG, disabledbackground=DARK_ENTRY, width=52).pack(side=LEFT, fill=X, expand=True)
-Button(f_out_row, text="浏览...", bg=BTN_BLUE, fg=FG,
+fr_or = Frame(fr_out, bg=BG)
+fr_or.pack(fill=X, pady=3)
+Entry(fr_or, textvariable=out_var, font=MONO_FONT, bg=DARK_ENTRY, fg=FG,
+      insertbackground=FG, width=52, state=DISABLED).pack(side=LEFT, fill=X, expand=True)
+Button(fr_or, text="浏览...", bg=BTN_BLUE, fg=FG,
        activebackground=BTN_BLUE_HOVER, relief=FLAT, width=8).pack(side=LEFT, padx=(5, 0))
-Frame(root, bg=BG, height=1).pack(fill=X, padx=20, pady=(5, 0))
+sep()
 
 # ─── 进度条 ───
-f_progress = Frame(root, bg=BG)
-f_progress.pack(fill=X, padx=20, pady=(10, 0))
+fr_prog = Frame(root, bg=BG)
+fr_prog.pack(fill=X, padx=20, pady=(10, 0))
 progress_var = DoubleVar(value=0)
-ttk.Progressbar(f_progress, variable=progress_var, mode='determinate',
+ttk.Progressbar(fr_prog, variable=progress_var, mode="determinate",
                 length=640).pack()
 progress_label_var = StringVar(value="")
-Label(f_progress, textvariable=progress_label_var, font=SMALL_FONT,
+Label(fr_prog, textvariable=progress_label_var, font=SMALL_FONT,
       fg="#808080", bg=BG).pack()
+sep()
 
 # ─── 按钮 ───
-f_buttons = Frame(root, bg=BG)
-f_buttons.pack(fill=X, padx=20, pady=10)
-start_btn = Button(f_buttons, text="开始转换", font=("Segoe UI", 10, "bold"),
-                 bg=BTN_BLUE, fg="white", activebackground=BTN_BLUE_HOVER,
-                 relief=FLAT, width=12, state=DISABLED)
+fr_btn = Frame(root, bg=BG)
+fr_btn.pack(fill=X, padx=20, pady=10)
+start_btn = Button(fr_btn, text="开始转换", font=("Segoe UI", 10, "bold"),
+                   bg=BTN_BLUE, fg="white", activebackground=BTN_BLUE_HOVER,
+                   relief=FLAT, width=12, state=DISABLED)
 start_btn.pack(side=LEFT)
-cancel_btn = Button(f_buttons, text="取消", font=("Segoe UI", 10),
+cancel_btn = Button(fr_btn, text="取消", font=("Segoe UI", 10),
                    state=DISABLED, bg=BTN_GREY, fg=FG, relief=FLAT, width=8)
 cancel_btn.pack(side=LEFT, padx=(5, 0))
-Frame(root, bg=BG, height=1).pack(fill=X, padx=20)
 
 # ─── 状态栏 ───
-f_status = Frame(root, bg=BG)
-f_status.pack(fill=X, padx=20, pady=8)
+sep()
+fr_stat = Frame(root, bg=BG)
+fr_stat.pack(fill=X, padx=20, pady=8)
 status_var = StringVar(value="就绪 - 请先选择 blender.exe")
-Label(f_status, textvariable=status_var, font=SMALL_FONT, fg="#808080",
+Label(fr_stat, textvariable=status_var, font=SMALL_FONT, fg="#808080",
       bg=BG, anchor=W, wraplength=640).pack(fill=X)
 
 
@@ -335,7 +339,7 @@ def on_blender_browse():
     blender_var.set(path)
     ok, msg = check_blender(path)
     blender_status_var.set(msg)
-    Label(f_blender, textvariable=blender_status_var, font=SMALL_FONT,
+    Label(fr_blender, textvariable=blender_status_var, font=SMALL_FONT,
           fg=GREEN if ok else RED, bg=BG, anchor=W).pack(anchor=W)
     start_btn.config(state=NORMAL if ok else DISABLED)
     if ok:
@@ -356,13 +360,12 @@ def on_stp_browse():
         samples = ", ".join(info.get("samples", [])[:5])
         info_var.set("零件数: %d 个 | 大小: %.1f MB | 示例: %s" % (
             info["parts"], info["size_mb"], samples))
-        Label(f_stp, textvariable=info_var, font=SMALL_FONT, fg=GREEN, bg=BG,
+        Label(fr_stp, textvariable=info_var, font=SMALL_FONT, fg=GREEN, bg=BG,
               anchor=W, wraplength=640).pack(anchor=W)
-        out_path = str(Path(path).with_suffix(".glb"))
-        out_var.set(out_path)
+        out_var.set(str(Path(path).with_suffix(".glb")))
     else:
         info_var.set("读取失败: " + info["error"])
-        Label(f_stp, textvariable=info_var, font=SMALL_FONT, fg=RED, bg=BG,
+        Label(fr_stp, textvariable=info_var, font=SMALL_FONT, fg=RED, bg=BG,
               anchor=W, wraplength=640).pack(anchor=W)
 
 
@@ -410,10 +413,10 @@ def do_convert():
     threading.Thread(target=worker, daemon=True).start()
 
 
-# 绑定按钮回调
-f_blender_row.winfo_children()[1].config(command=on_blender_browse)
-f_stp_row.winfo_children()[1].config(command=on_stp_browse)
-f_out_row.winfo_children()[1].config(command=on_output_browse)
+# Bind button callbacks
+fr_br.winfo_children()[1].config(command=on_blender_browse)
+fr_sr.winfo_children()[1].config(command=on_stp_browse)
+fr_or.winfo_children()[1].config(command=on_output_browse)
 start_btn.config(command=do_convert)
 
 
@@ -424,7 +427,7 @@ if auto_blender:
     blender_var.set(auto_blender)
     ok, msg = check_blender(auto_blender)
     blender_status_var.set(msg)
-    Label(f_blender, textvariable=blender_status_var, font=SMALL_FONT,
+    Label(fr_blender, textvariable=blender_status_var, font=SMALL_FONT,
           fg=GREEN if ok else ORANGE, bg=BG, anchor=W).pack(anchor=W)
     if ok:
         start_btn.config(state=NORMAL)
