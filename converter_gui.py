@@ -10,6 +10,8 @@ import re
 import time
 from pathlib import Path
 from tkinter import *
+from tkinter import ttk  # noqa: F401
+from tkinter import ttk as ttk_
 from tkinter import filedialog, messagebox, ttk
 
 # ─── 全局崩溃捕获 + 日志 ───
@@ -257,7 +259,7 @@ frame_top.pack(fill=X, padx=20, pady=(20, 5))
 Label(frame_top, text="STP -> GLB 转换工具", font=TITLE_FONT, fg=ACCENT, bg=BG).pack(anchor=W)
 Label(frame_top, text="Powered by Blender + Python tkinter | 崩溃日志: startup.log", font=("Segoe UI", 8), fg="#808080", bg=BG).pack(anchor=W)
 
-Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20, pady=5)
+ttk.Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20, pady=5)
 
 # Blender
 frame_blender = Frame(root, bg=BG)
@@ -276,7 +278,7 @@ blender_status_var = StringVar(value="未选择")
 Label(frame_blender, text="状态:", font=("Segoe UI", 9), fg="#808080", bg=BG).pack(anchor=W)
 Label(frame_blender, textvariable=blender_status_var, font=("Segoe UI", 9), fg=ORANGE, bg=BG, anchor=W).pack(anchor=W)
 
-Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20, pady=5)
+ttk.Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20, pady=5)
 
 # STP
 frame_stp = Frame(root, bg=BG)
@@ -293,7 +295,7 @@ Button(frame_stp_row, text="浏览...", command=lambda: browse_file(stp_var),
 info_var = StringVar(value="等待选择文件...")
 Label(frame_stp, textvariable=info_var, font=("Segoe UI", 9), fg="#808080", bg=BG, anchor=W, wraplength=620).pack(anchor=W)
 
-Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20, pady=5)
+ttk.Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20, pady=5)
 
 # 输出路径
 frame_out = Frame(root, bg=BG)
@@ -329,7 +331,7 @@ cancel_btn = Button(frame_buttons, text="取消", font=("Segoe UI", 10),
 cancel_btn.pack(side=LEFT, padx=(5, 0))
 
 # 状态栏
-Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20)
+ttk.Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20)
 frame_status = Frame(root, bg=BG)
 frame_status.pack(fill=X, padx=20, pady=8)
 status_var = StringVar(value="就绪 - 请先选择 blender.exe")
