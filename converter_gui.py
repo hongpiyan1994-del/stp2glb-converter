@@ -1,16 +1,16 @@
 """
 STP → GLB 转换工具
-主程序：DearPyGUI 交互界面 + Blender subprocess 封装
+主程序：tkinter 界面 + Blender subprocess 封装
 """
 import os
 import sys
 import subprocess
 import threading
 import re
-import json
 import time
-import ctypes
 from pathlib import Path
+from tkinter import *
+from tkinter import filedialog, messagebox, ttk
 
 # ─── 全局崩溃捕获 + 日志 ───
 LOG_FILE = os.path.join(os.path.dirname(sys.argv[0] if getattr(sys, 'frozen', False) else __file__), "startup.log")
@@ -22,51 +22,33 @@ def log(msg):
     except:
         pass
 
-def show_error(msg):
-    """弹窗 + 日志，双保险"""
-    log("FATAL ERROR: " + msg)
-    try:
-        ctypes.windll.user32.MessageBoxW(0, msg, "STP->GLB 转换工具 错误", 0x10)
-    except:
-        pass
-    print("FATAL ERROR: " + msg, file=sys.stderr)
-
-# 全局异常捕获
 def except_hook(exc_type, exc_value, exc_traceback):
     if issubclass(exc_type, KeyboardInterrupt):
         sys.__excepthook__(exc_type, exc_value, exc_traceback)
         return
-    log("UNCAUGHT %s: %s" % (exc_type.__name__, str(exc_value)))
-    show_error("程序遇到错误:\n\n%s: %s\n\n详细信息已写入 startup.log" % (exc_type.__name__, str(exc_value)))
+    import traceback
+    tb = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    log("UNCAUGHT %s: %s\n%s" % (exc_type.__name__, str(exc_value), tb))
+    try:
+        messagebox.showerror("STP->GLB 转换工具 错误",
+            "%s: %s\n\n详细信息已写入 startup.log" % (exc_type.__name__, str(exc_value)))
+    except:
+        pass
     sys.exit(1)
 
 sys.excepthook = except_hook
 
 log("=" * 40)
-log("Startup: " + " ".join(sys.argv))
+log("Startup: " + sys.argv[0])
 log("Python: " + sys.version)
-log("CWD: " + os.getcwd())
-
-# ─── 验证关键依赖 ───
-try:
-    import dearpygui.dearpygui as dpg
-    log("DearPyGUI imported OK, version: " + str(dpg.get_app_configuration() if hasattr(dpg, 'get_app_configuration') else 'OK'))
-except ImportError as e:
-    log("DearPyGUI ImportError: " + str(e))
-    show_error("缺少 DearPyGUI 依赖。\n\n请在命令提示符运行:\npip install dearpygui\n\n然后重新启动程序。")
-    sys.exit(1)
-except Exception as e:
-    log("DearPyGUI init error: " + str(e))
-    show_error("DearPyGUI 初始化失败:\n\n" + str(e) + "\n\n请尝试:\npip install dearpygui --force-reinstall")
-    sys.exit(1)
 
 # ─── 全局配置 ───
 VERSION = "1.0.0"
-SUPPORTED_EXTENSIONS = [".stp", ".step", ".STP", ".STEP"]
+SUPPORTED_EXTENSIONS = [("STP/STEP 文件", "*.stp *.step *.STP *.STEP"), ("所有文件", "*.*")]
 
-# ─── Blender 路径检测 ───
-def get_blender_path():
-    """从多个位置找 blender.exe"""
+# ─── Blender 检测 ───
+def find_blender():
+    """从多个可能位置找 blender.exe"""
     candidates = []
     if getattr(sys, 'frozen', False):
         base = Path(sys._MEIPASS)
@@ -81,70 +63,68 @@ def get_blender_path():
         base = Path(__file__).parent
         candidates += [base / "blender" / "blender.exe", base / "blender.exe"]
 
-    candidates += [Path(os.environ.get("BLENDER_PATH", ""))]
-    if os.environ.get("ProgramFiles"):
-        candidates.append(Path(os.environ["ProgramFiles"]) / "Blender" / "blender.exe")
+    pf = os.environ.get("ProgramFiles", "")
+    if pf:
+        candidates.append(Path(pf) / "Blender" / "blender.exe")
 
     for p in candidates:
         if p.exists():
-            log("Blender candidate found: " + str(p))
+            log("Blender found: " + str(p))
             return str(p)
-    log("No blender.exe found, candidates checked: " + str(candidates))
+    log("No blender.exe found")
     return ""
 
 
-def check_blender(blender_path):
-    if not blender_path:
-        return False, "未指定 blender.exe"
+def check_blender(path):
+    if not path:
+        return False, "未指定"
     try:
-        result = subprocess.run([blender_path, "--version"],
-                                capture_output=True, text=True, timeout=15)
-        if result.returncode == 0:
-            return True, result.stdout.strip().split('\n')[0]
-        return False, "Blender 返回退出码 " + str(result.returncode)
+        r = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=15)
+        if r.returncode == 0:
+            return True, r.stdout.strip().split('\n')[0]
+        return False, "exit code " + str(r.returncode)
     except FileNotFoundError:
-        return False, "文件不存在: " + blender_path
+        return False, "文件不存在"
     except Exception as e:
         return False, str(e)
 
 
-# ─── 文件解析 ───
-def get_stp_info(stp_path):
+# ─── STP 信息读取 ───
+def get_stp_info(path):
     try:
-        with open(stp_path, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
             header = f.read(50000)
         products = re.findall(r"#\d+=PRODUCT\('([^']+)'", header)
         return {
-            "filename": Path(stp_path).name,
-            "size_mb": round(Path(stp_path).stat().st_size / 1024 / 1024, 2),
+            "filename": Path(path).name,
+            "size_mb": round(Path(path).stat().st_size / 1024 / 1024, 2),
             "parts": len(products),
-            "sample_parts": products[:10]
+            "samples": products[:8]
         }
     except Exception as e:
         return {"error": str(e)}
 
 
-def parse_glb_stats(glb_path):
+def parse_glb_stats(path):
     try:
-        size_mb = round(Path(glb_path).stat().st_size / 1024 / 1024, 2)
-        with open(glb_path, 'rb') as f:
+        size_mb = round(Path(path).stat().st_size / 1024 / 1024, 2)
+        with open(path, 'rb') as f:
             if f.read(4) != b'glTF':
-                return {"error": "文件格式不是有效的 GLB"}
+                return {"error": "无效 GLB"}
         return {"size_mb": size_mb, "valid": True}
     except Exception as e:
         return {"error": str(e)}
 
 
-# ─── Blender 转换 ───
-def convert_stp_to_glb(stp_path, output_glb_path, blender_exe, progress_callback=None):
+# ─── Blender 转换核心 ───
+def convert_stp_to_glb(stp_path, output_glb_path, blender_exe, progress_var, status_var):
     if not blender_exe or not Path(blender_exe).exists():
-        return False, "blender.exe 未找到: " + str(blender_exe)
+        return False, "blender.exe 未找到"
 
-    _stp_ = "__STP__"
-    _out_ = "__OUT__"
+    _sp = "__STP__"
+    _op = "__OUT__"
     _tpl = """
-import bpy
-import sys
+import bpy, sys
 
 bpy.ops.object.select_all(action='SELECT')
 bpy.ops.object.delete(use_global=False)
@@ -163,251 +143,272 @@ for obj in bpy.data.objects:
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
         bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_VOLUME')
 
-output_path = r"%s"
+out = r"%s"
 try:
-    bpy.ops.export_scene.gltf(
-        filepath=output_path,
-        export_format='GLB',
-        export_draco=1,
-        export_materials='EXPORT',
-        export_colors=True,
-        use_selection=False
-    )
+    bpy.ops.export_scene.gltf(filepath=out, export_format='GLB',
+        export_draco=1, export_materials='EXPORT',
+        export_colors=True, use_selection=False)
     print("CONVERT_SUCCESS")
 except Exception as e:
     print("EXPORT_ERROR:" + str(e))
     sys.exit(1)
-""" % (_stp_, _out_)
+""" % (_sp, _op)
 
-    script_content = _tpl.replace(_stp_, stp_path).replace(_out_, output_glb_path)
-    script_path = output_glb_path + ".convert_script.py"
+    script = _tpl.replace(_sp, stp_path).replace(_op, output_glb_path)
+    script_path = output_glb_path + ".pyconvert"
     with open(script_path, 'w', encoding='utf-8') as f:
-        f.write(script_content)
+        f.write(script)
 
-    log("Launching Blender: " + blender_exe)
-    log("STP: " + stp_path + " -> " + output_glb_path)
+    log("Blender: " + blender_exe)
+    log("STP: " + stp_path)
 
     try:
-        process = subprocess.Popen(
+        p = subprocess.Popen(
             [blender_exe, "--background", "--python", script_path],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
-
-        output_lines = []
+        out_lines = []
         while True:
-            line = process.stdout.readline()
-            if not line and process.poll() is not None:
+            line = p.stdout.readline()
+            if not line and p.poll() is not None:
                 break
             if line:
-                output_lines.append(line.strip())
-                if progress_callback:
-                    progress_callback(line.strip())
+                out_lines.append(line.strip())
+                root.after(10, lambda l=line.strip(): status_var.set(l[:80]))
 
-        stderr = process.stderr.read()
-        returncode = process.wait()
-
+        stderr = p.stderr.read()
+        rc = p.wait()
         try:
             os.remove(script_path)
         except:
             pass
 
-        if returncode != 0:
-            error_msg = "\n".join(output_lines + [stderr])
+        if rc != 0:
+            msg = "\n".join(out_lines + [stderr])
             for pat in [r"IMPORT_ERROR:(.+)", r"EXPORT_ERROR:(.+)", r"Error: (.+)"]:
-                m = re.search(pat, error_msg)
+                m = re.search(pat, msg)
                 if m:
                     return False, m.group(1).strip()
-            return False, "Blender 异常退出 (code " + str(returncode) + ")"
+            return False, "Blender exit code: " + str(rc)
 
         if not os.path.exists(output_glb_path):
-            return False, "GLB 文件未生成"
+            return False, "GLB 未生成"
 
-        log("Conversion SUCCESS: " + output_glb_path)
+        log("SUCCESS: " + output_glb_path)
         return True, output_glb_path
 
     except Exception as e:
-        log("convert exception: " + str(e))
-        return False, "转换过程异常: " + str(e)
+        log("convert error: " + str(e))
+        return False, str(e)
 
 
-# ─── 状态 ───
-dpg.destroy_context()
-dpg.create_context()
-
-state = {
-    "stp_path": "", "output_path": "", "blender_exe": "",
-    "stp_info": {}, "is_converting": False,
-    "blender_ok": False, "blender_version": "",
-}
-
-
-def on_blender_selected(sender, app_data, user_data):
-    path = app_data.get("file_path_name", "")
-    if path:
-        state["blender_exe"] = path
-        dpg.set_value("blender_path_text", path)
-        ok, msg = check_blender(path)
-        state["blender_ok"] = ok
-        state["blender_version"] = msg
-        color = (0, 255, 0, 255) if ok else (255, 80, 80, 255)
-        dpg.configure_item("blender_status", default_value=msg, color=color)
-        dpg.configure_item("start_btn", enabled=ok)
-
-
-def on_file_selected(sender, app_data, user_data):
-    path = app_data.get("file_path_name", "")
-    if path and any(path.endswith(ext) for ext in SUPPORTED_EXTENSIONS):
-        state["stp_path"] = path
-        dpg.set_value("file_path_text", path)
-        info = get_stp_info(path)
-        state["stp_info"] = info
-        if "error" not in info:
-            dpg.set_value("info_text", "零件数: %d 个\n示例: %s" % (info['parts'], ", ".join(info.get("sample_parts", [])[:5])))
-            dpg.configure_item("info_text", color=(0, 255, 0, 255))
-            state["output_path"] = str(Path(path).with_suffix(".glb"))
-            dpg.set_value("output_path_text", state["output_path"])
-        else:
-            dpg.set_value("info_text", "读取失败: " + info['error'])
-            dpg.configure_item("info_text", color=(255, 80, 80, 255))
-
-
-def on_output_selected(sender, app_data, user_data):
-    path = app_data.get("file_path_name", "")
-    if path:
-        state["output_path"] = path
-        dpg.set_value("output_path_text", path)
-
-
-def on_start_convert(sender, app_data, user_data):
-    if not state["stp_path"] or not state["output_path"] or not state["blender_exe"]:
-        dpg.set_value("status_text", "请填写所有步骤")
+# ─── 转换线程 ───
+def do_convert(stp_var, out_var, blender_var, progress_var, status_var, start_btn, cancel_btn):
+    stp = stp_var.get()
+    out = out_var.get()
+    blender = blender_var.get()
+    if not all([stp, out, blender]):
+        status_var.set("请填写所有步骤")
         return
 
-    state["is_converting"] = True
-    dpg.configure_item("start_btn", enabled=False)
-    dpg.configure_item("cancel_btn", enabled=True)
-    dpg.set_value("status_text", "正在转换，请稍候...")
-    dpg.set_value("progress_text", "0%")
-    dpg.configure_item("progress_bar", default_value=0.0)
+    start_btn.config(state=DISABLED)
+    cancel_btn.config(state=NORMAL)
+    progress_var.set(0)
+    status_var.set("正在转换，请稍候...")
 
     def worker():
-        ok, result = convert_stp_to_glb(
-            state["stp_path"], state["output_path"], state["blender_exe"],
-            progress_callback=lambda l: dpg.set_value("status_text", l[:80] if l else "...")
-        )
-        state["is_converting"] = False
-
+        ok, result = convert_stp_to_glb(stp, out, blender, progress_var, status_var)
         if ok:
-            glb_info = parse_glb_stats(result)
-            dpg.set_value("progress_bar", 1.0)
-            dpg.set_value("progress_text", "100%")
-            dpg.set_value("status_text", "成功! GLB: %.1f MB\n%s" % (glb_info.get('size_mb', 0), result))
+            info = parse_glb_stats(result)
+            root.after(0, lambda: progress_var.set(100))
+            root.after(0, lambda: status_var.set(
+                "转换成功！%.1f MB\n%s" % (info.get('size_mb', 0), result)))
         else:
-            dpg.set_value("progress_bar", 0.0)
-            dpg.set_value("progress_text", "失败")
-            dpg.set_value("status_text", "转换失败: " + result)
-
-        dpg.configure_item("start_btn", enabled=True)
-        dpg.configure_item("cancel_btn", enabled=False)
+            root.after(0, lambda: status_var.set("失败: " + result))
+        root.after(0, lambda: start_btn.config(state=NORMAL))
+        root.after(0, lambda: cancel_btn.config(state=DISABLED))
 
     threading.Thread(target=worker, daemon=True).start()
 
 
-# ─── 窗口布局 ───
-WIN_W = 640
-with dpg.window(tag="main_window", label="STP -> GLB 转换工具", width=WIN_W, height=550, pos=(100, 100)):
-    dpg.add_text("STP -> GLB 转换工具 v" + VERSION, color=(0, 200, 255, 255))
-    dpg.add_text("Powered by Blender + DearPyGUI | 提示: 请先选择 blender.exe", color=(150, 150, 150, 255))
-    dpg.add_separator()
+# ─── UI 布局 ───
+root = Tk()
+root.title("STP -> GLB 转换工具 v" + VERSION)
+root.geometry("680x520")
+root.resizable(False, False)
+root.configure(bg="#1e1e1e")
 
-    dpg.add_text("第一步: 选择 blender.exe (必填)", color=(200, 200, 200, 255))
-    with dpg.group(horizontal=True):
-        dpg.add_input_text(tag="blender_path_text", default_value="", width=440, readonly=True, hint="点击浏览选择 blender.exe")
-        dpg.add_button(label="浏览...", callback=lambda s, a, u: dpg.show_item("blender_dialog"), width=80)
-    with dpg.group(horizontal=True):
-        dpg.add_text("状态: ", color=(180, 180, 180, 255))
-        dpg.add_text("未选择", tag="blender_status", color=(255, 200, 0, 255))
+# 字体
+TITLE_FONT = ("Segoe UI", 16, "bold")
+LABEL_FONT = ("Segoe UI", 10)
+MONO_FONT = ("Consolas", 9)
 
-    dpg.add_spacer(height=5)
-    dpg.add_separator()
-    dpg.add_spacer(height=5)
+# 颜色
+BG = "#1e1e1e"
+FG = "#d4d4d4"
+ACCENT = "#007acc"
+GREEN = "#4ec9b0"
+RED = "#f14c4c"
+ORANGE = "#cca700"
 
-    dpg.add_text("第二步: 选择 STP/STEP 文件", color=(200, 200, 200, 255))
-    with dpg.group(horizontal=True):
-        dpg.add_input_text(tag="file_path_text", default_value="", width=440, readonly=True, hint="点击浏览选择文件")
-        dpg.add_button(label="浏览...", callback=lambda s, a, u: dpg.show_item("file_dialog"), width=80)
-    dpg.add_text("等待选择文件...", tag="info_text", color=(200, 200, 200, 255), wrap=WIN_W - 40)
+# 上边框
+frame_top = Frame(root, bg=BG)
+frame_top.pack(fill=X, padx=20, pady=(20, 5))
+Label(frame_top, text="STP -> GLB 转换工具", font=TITLE_FONT, fg=ACCENT, bg=BG).pack(anchor=W)
+Label(frame_top, text="Powered by Blender + Python tkinter | 崩溃日志: startup.log", font=("Segoe UI", 8), fg="#808080", bg=BG).pack(anchor=W)
 
-    dpg.add_spacer(height=5)
-    dpg.add_separator()
-    dpg.add_spacer(height=5)
+Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20, pady=5)
 
-    dpg.add_text("第三步: 保存 GLB 位置", color=(200, 200, 200, 255))
-    with dpg.group(horizontal=True):
-        dpg.add_input_text(tag="output_path_text", default_value="", width=440, readonly=True, hint="点击浏览选择保存位置")
-        dpg.add_button(label="浏览...", callback=lambda s, a, u: dpg.show_item("output_dialog"), width=80)
+# Blender
+frame_blender = Frame(root, bg=BG)
+frame_blender.pack(fill=X, padx=20, pady=5)
+Label(frame_blender, text="第一步: 选择 blender.exe (必填)", font=LABEL_FONT, fg=FG, bg=BG).pack(anchor=W)
+frame_blender_row = Frame(frame_blender, bg=BG)
+frame_blender_row.pack(fill=X, pady=3)
+blender_var = StringVar()
+Entry(frame_blender_row, textvariable=blender_var, font=MONO_FONT, bg="#2d2d2d", fg=FG,
+      insertbackground=FG, disabledbackground="#2d2d2d", disabledforeground="#808080",
+      width=52, state=DISABLED).pack(side=LEFT, fill=X, expand=True)
+Button(frame_blender_row, text="浏览...", command=lambda: browse_blender(blender_var),
+       bg="#0e639c", fg=FG, activebackground="#1177bb", relief=FLAT, width=8).pack(side=LEFT, padx=(5, 0))
 
-    dpg.add_spacer(height=15)
+blender_status_var = StringVar(value="未选择")
+Label(frame_blender, text="状态:", font=("Segoe UI", 9), fg="#808080", bg=BG).pack(anchor=W)
+Label(frame_blender, textvariable=blender_status_var, font=("Segoe UI", 9), fg=ORANGE, bg=BG, anchor=W).pack(anchor=W)
 
-    dpg.add_progress_bar(tag="progress_bar", default_value=0.0, width=WIN_W - 40, height=22)
-    dpg.add_text("", tag="progress_text", color=(150, 150, 150, 255))
+Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20, pady=5)
 
-    dpg.add_spacer(height=10)
-    with dpg.group(horizontal=True):
-        dpg.add_button(label="开始转换", tag="start_btn", callback=on_start_convert, width=140, enabled=False)
-        dpg.add_button(label="取消", tag="cancel_btn", callback=None, width=80, enabled=False)
+# STP
+frame_stp = Frame(root, bg=BG)
+frame_stp.pack(fill=X, padx=20, pady=5)
+Label(frame_stp, text="第二步: 选择 STP/STEP 文件", font=LABEL_FONT, fg=FG, bg=BG).pack(anchor=W)
+frame_stp_row = Frame(frame_stp, bg=BG)
+frame_stp_row.pack(fill=X, pady=3)
+stp_var = StringVar()
+Entry(frame_stp_row, textvariable=stp_var, font=MONO_FONT, bg="#2d2d2d", fg=FG,
+      insertbackground=FG, width=52, state=DISABLED).pack(side=LEFT, fill=X, expand=True)
+Button(frame_stp_row, text="浏览...", command=lambda: browse_file(stp_var),
+       bg="#0e639c", fg=FG, activebackground="#1177bb", relief=FLAT, width=8).pack(side=LEFT, padx=(5, 0))
 
-    dpg.add_spacer(height=10)
-    dpg.add_separator()
-    dpg.add_text("就绪", tag="status_text", color=(150, 150, 150, 255), wrap=WIN_W - 40)
+info_var = StringVar(value="等待选择文件...")
+Label(frame_stp, textvariable=info_var, font=("Segoe UI", 9), fg="#808080", bg=BG, anchor=W, wraplength=620).pack(anchor=W)
+
+Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20, pady=5)
+
+# 输出路径
+frame_out = Frame(root, bg=BG)
+frame_out.pack(fill=X, padx=20, pady=5)
+Label(frame_out, text="第三步: 保存 GLB 位置", font=LABEL_FONT, fg=FG, bg=BG).pack(anchor=W)
+frame_out_row = Frame(frame_out, bg=BG)
+frame_out_row.pack(fill=X, pady=3)
+out_var = StringVar()
+Entry(frame_out_row, textvariable=out_var, font=MONO_FONT, bg="#2d2d2d", fg=FG,
+      insertbackground=FG, width=52, state=DISABLED).pack(side=LEFT, fill=X, expand=True)
+Button(frame_out_row, text="浏览...", command=lambda: save_file(out_var, stp_var),
+       bg="#0e639c", fg=FG, activebackground="#1177bb", relief=FLAT, width=8).pack(side=LEFT, padx=(5, 0))
+
+# 进度条
+progress_var = DoubleVar(value=0)
+frame_progress = Frame(root, bg=BG)
+frame_progress.pack(fill=X, padx=20, pady=(10, 0))
+Progressbar(frame_progress, variable=progress_var, mode=determinate,
+           length=640, height=18, bg="#2d2d2d", fg=ACCENT,
+           troughcolor="#2d2d2d", borderwidth=0).pack()
+progress_label_var = StringVar(value="")
+Label(frame_progress, textvariable=progress_label_var, font=("Segoe UI", 8), fg="#808080", bg=BG).pack()
+
+# 按钮
+frame_buttons = Frame(root, bg=BG)
+frame_buttons.pack(fill=X, padx=20, pady=10)
+start_btn = Button(frame_buttons, text="开始转换", font=("Segoe UI", 10, "bold"),
+                  command=lambda: do_convert(stp_var, out_var, blender_var, progress_var, status_var, start_btn, cancel_btn),
+                  bg="#0e639c", fg="white", activebackground="#1177bb", relief=FLAT, width=12, state=DISABLED)
+start_btn.pack(side=LEFT)
+cancel_btn = Button(frame_buttons, text="取消", font=("Segoe UI", 10),
+                   state=DISABLED, bg="#3c3c3c", fg=FG, relief=FLAT, width=8)
+cancel_btn.pack(side=LEFT, padx=(5, 0))
+
+# 状态栏
+Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20)
+frame_status = Frame(root, bg=BG)
+frame_status.pack(fill=X, padx=20, pady=8)
+status_var = StringVar(value="就绪 - 请先选择 blender.exe")
+Label(frame_status, textvariable=status_var, font=("Segoe UI", 9), fg="#808080", bg=BG, anchor=W, wraplength=640).pack(fill=X)
 
 
-# ─── 文件对话框 ───
-with dpg.file_dialog(tag="blender_dialog", label="选择 blender.exe",
-        directory_selector=False, show=False, modal=True,
-        callback=on_blender_selected, min_size=(500, 400)):
-    dpg.add_file_extension(".exe", color=(0, 255, 0, 255))
-    dpg.add_file_extension(".*", color=(200, 200, 200, 255))
+# ─── 回调函数 ───
+def browse_blender(var):
+    path = filedialog.askopenfilename(
+        title="选择 blender.exe",
+        filetypes=[("blender.exe", "blender.exe"), ("所有文件", "*.*")],
+        initialdir=os.environ.get("ProgramFiles", "C:\\")
+    )
+    if path:
+        var.set(path)
+        ok, msg = check_blender(path)
+        blender_status_var.set(msg)
+        Label(frame_blender, textvariable=blender_status_var,
+              font=("Segoe UI", 9), fg=GREEN if ok else RED, bg=BG, anchor=W).pack(anchor=W)
+        start_btn.config(state=NORMAL if ok else DISABLED)
 
-with dpg.file_dialog(tag="file_dialog", label="选择 STP 文件",
-        directory_selector=False, show=True, modal=True,
-        callback=on_file_selected, min_size=(500, 400),
-        default_path=os.path.expanduser("~/Desktop")):
-    for ext in SUPPORTED_EXTENSIONS:
-        dpg.add_file_extension(ext, color=(0, 255, 0, 255))
-    dpg.add_file_extension(".*", color=(200, 200, 200, 255))
 
-with dpg.file_dialog(tag="output_dialog", label="保存 GLB 文件",
-        directory_selector=False, show=False, modal=True,
-        callback=on_output_selected, min_size=(500, 400), file_name="output.glb"):
-    dpg.add_file_extension(".glb", color=(0, 255, 0, 255))
-    dpg.add_file_extension(".*", color=(200, 200, 200, 255))
+def browse_file(var):
+    path = filedialog.askopenfilename(
+        title="选择 STP/STEP 文件",
+        filetypes=SUPPORTED_EXTENSIONS,
+        initialdir=os.path.expanduser("~/Desktop")
+    )
+    if path:
+        var.set(path)
+        info = get_stp_info(path)
+        if "error" not in info:
+            samples = ", ".join(info.get("samples", [])[:5])
+            info_var.set("零件数: %d 个 | 大小: %.1f MB | 示例: %s" % (
+                info['parts'], info['size_mb'], samples))
+            info_var._root_label.config(fg=GREEN)
+            # 自动设置输出路径
+            out_path = str(Path(path).with_suffix(".glb"))
+            out_var.set(out_path)
+        else:
+            info_var.set("读取失败: " + info['error'])
+            info_var._root_label.config(fg=RED)
+
+
+def save_file(var, stp_var_ref):
+    path = filedialog.asksaveasfilename(
+        title="保存 GLB 文件",
+        defaultextension=".glb",
+        filetypes=[("GLB 文件", "*.glb"), ("所有文件", "*.*")],
+        initialdir=os.path.dirname(stp_var_ref.get()) if stp_var_ref.get() else None
+    )
+    if path:
+        var.set(path)
 
 
 # ─── Blender 自动检测 ───
-auto_blender = get_blender_path()
+log("Starting Blender auto-detect...")
+auto_blender = find_blender()
 if auto_blender:
-    state["blender_exe"] = auto_blender
-    dpg.set_value("blender_path_text", auto_blender)
+    blender_var.set(auto_blender)
     ok, msg = check_blender(auto_blender)
-    state["blender_ok"] = ok
-    state["blender_version"] = msg
+    blender_status_var.set(msg)
+    Label(frame_blender, textvariable=blender_status_var,
+          font=("Segoe UI", 9), fg=GREEN if ok else ORANGE, bg=BG, anchor=W).pack(anchor=W)
     if ok:
-        dpg.configure_item("blender_status", default_value=msg, color=(0, 255, 0, 255))
-        log("Blender auto-detected and OK: " + msg)
-    else:
-        dpg.configure_item("blender_status", default_value=msg + " (请手动选择)", color=(255, 200, 0, 255))
-        log("Blender auto-detected but check FAILED: " + msg)
+        start_btn.config(state=NORMAL)
+        log("Blender auto-detected OK")
+        status_var.set("Blender 自动检测成功: " + msg[:60])
 else:
-    log("No Blender auto-detected")
-    dpg.set_value("blender_status", "未检测到，请手动选择 blender.exe")
+    log("No Blender auto-detected, user must select manually")
 
 
 # ─── 启动 ───
-log("Showing viewport")
-dpg.set_primary_window("main_window", True)
-dpg.setup_dearpygui()
-dpg.show_viewport()
-dpg.start_dearpygui()
-dpg.destroy_context()
-log("Shutdown OK")
+log("Starting mainloop...")
+# hack: 给 info_var 添加 _root_label 引用用于后续配置颜色
+for w in frame_stp.winfo_children():
+    if isinstance(w, Label) and w.cget("textvariable") == info_var:
+        info_var._root_label = w
+        break
+
+root.mainloop()
+log("Mainloop ended")
