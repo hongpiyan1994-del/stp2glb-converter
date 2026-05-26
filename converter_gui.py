@@ -297,7 +297,7 @@ ttk.Separator(root, orient=HORIZONTAL).pack(fill=X, padx=20, pady=(5, 0))
 f_progress = Frame(root, bg=BG)
 f_progress.pack(fill=X, padx=20, pady=(10, 0))
 progress_var = DoubleVar(value=0)
-ttk.Progressbar(f_progress, variable=progress_var, mode=DETERMINATE,
+ttk.Progressbar(f_progress, variable=progress_var, mode='determinate',
                 length=640, height=18).pack()
 progress_label_var = StringVar(value="")
 Label(f_progress, textvariable=progress_label_var, font=SMALL_FONT,
