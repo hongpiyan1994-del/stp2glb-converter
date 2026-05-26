@@ -23,56 +23,25 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Download Blender (portable)
+      - name: Download Blender
         shell: pwsh
         run: |
-          $blenderVersion = "4.2.0"
-          $blenderUrl = "https://download.blender.org/release/Blender4.2/blender-$blenderVersion-windows-x64.zip"
-          Write-Host "Downloading Blender $blenderVersion..."
+          $blenderUrl = "https://download.blender.org/release/Blender4.2/blender-4.2.0-windows-x64.zip"
           [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
           Invoke-WebRequest -Uri $blenderUrl -OutFile blender.zip -UseBasicParsing
-          Write-Host "Extracting..."
           Expand-Archive -Path blender.zip -DestinationPath . -Force
           Remove-Item blender.zip
           $extractedDir = Get-ChildItem -Directory | Where-Object { $_.Name -like "blender*" } | Select-Object -First 1
-          if ($extractedDir) {
-            Write-Host "Found: $($extractedDir.FullName)"
-            Move-Item $extractedDir.FullName blender
-          } else {
-            Write-Host "ERROR: No Blender directory found"
-            Get-ChildItem | Format-Table Name, Mode
-            exit 1
+          if ($extractedDir) { Move-Item $extractedDir.FullName blender }          
+
+      - name: Build EXE
+        run: |
+          python -m PyInstaller converter.spec --noconfirm 2>&1
+          if ($LASTEXITCODE -ne 0) {
+            python -m PyInstaller converter_gui.py --onefile --noconfirm --console 2>&1
           }          
 
-      - name: Verify Blender
-        run: |
-          if (Test-Path "./blender/blender.exe") {
-            echo "SUCCESS: Blender found"
-            ./blender/blender.exe --version
-          } else {
-            echo "FAIL: blender.exe not found"
-            Get-ChildItem -Recurse -Name | Select-Object -First 20
-            exit 1
-          }          
-
-      - name: Build EXE with PyInstaller
-        run: |
-          echo "=== PyInstaller version ==="
-          python -m PyInstaller --version
-          echo ""
-          echo "=== Running PyInstaller ==="
-          python -m PyInstaller converter.spec --noconfirm --clean
-          echo ""
-          echo "=== Exit code: $LASTEXITCODE ==="
-          if ($LASTEXITCODE -ne 0) { exit 1 }          
-
-      - name: List output
-        if: success()
-        run: |
-          echo "=== dist/ contents ==="
-          Get-ChildItem -Recurse dist/ | Format-Table FullName, Length -AutoSize          
-
-      - name: Upload EXE artifact
+      - name: Upload artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
