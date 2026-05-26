@@ -144,7 +144,6 @@ def convert_stp_to_glb(stp_path, output_glb_path, blender_exe, status_callback):
     out_esc = output_glb_path.replace("\\", "\\\\")
 
     script = (
-        "import bpy, sys\n"
         "import bpy, sys, addon_utils\n"
         "# Find and enable STEP/IO_mesh_step addon\n"
         "step_addon = None\n"
