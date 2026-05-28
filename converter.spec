@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller 打包配置
-# STP → GLB 转换工具 - tkinter 版本（无 native 依赖）
+# STP → GLB 转换工具 - tkinter 版本
+# 包含 Blender 运行时
 
 import sys, os
 
@@ -10,7 +11,11 @@ a = Analysis(
     ['converter_gui.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        # 捆绑 Blender 运行时（相对于 build 目录下的 blender/ 文件夹）
+        # 运行时会被解压到 sys._MEIPASS / blender/
+        ('./blender', 'blender'),
+    ],
     hiddenimports=[
         'struct', 'threading', 'subprocess', 'pathlib',
         're', 'json', 'time', 'ctypes',

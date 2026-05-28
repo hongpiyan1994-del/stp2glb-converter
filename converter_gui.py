@@ -75,11 +75,13 @@ def find_blender():
     if getattr(sys, "frozen", False):
         base = Path(sys._MEIPASS)
         exe_dir = Path(sys.argv[0]).parent
-        for d in [base, exe_dir]:
-            candidates.append(d / "blender" / "blender.exe")
+        # Priority 1: Blender folder next to EXE (bundled by PyInstaller datas)
+        for d in [exe_dir / "blender", base / "blender"]:
             candidates.append(d / "blender.exe")
-            # Also check Blender's own folder structure
+        # Priority 2: Blender folder with version suffix next to EXE
+        for d in [exe_dir, base]:
             candidates.append(d / "blender-4.2.0-windows-x64" / "blender.exe")
+            candidates.append(d / "blender.exe")
     else:
         candidates.append(Path(__file__).parent / "blender" / "blender.exe")
         candidates.append(Path(__file__).parent / "blender.exe")

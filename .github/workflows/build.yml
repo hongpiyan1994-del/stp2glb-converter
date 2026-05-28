@@ -23,28 +23,61 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Download Blender
+      - name: Download and bundle Blender
         shell: pwsh
         run: |
           $blenderUrl = "https://download.blender.org/release/Blender4.2/blender-4.2.0-windows-x64.zip"
           [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Write-Host "Downloading Blender..."
           Invoke-WebRequest -Uri $blenderUrl -OutFile blender.zip -UseBasicParsing
+          Write-Host "Extracting..."
           Expand-Archive -Path blender.zip -DestinationPath . -Force
           Remove-Item blender.zip
           $extractedDir = Get-ChildItem -Directory | Where-Object { $_.Name -like "blender*" } | Select-Object -First 1
-          if ($extractedDir) { Move-Item $extractedDir.FullName blender }          
+          if ($extractedDir) {
+            Write-Host "Renaming to blender/..."
+            Move-Item $extractedDir.FullName blender
+          }
+          if (Test-Path "./blender/blender.exe") {
+            Write-Host "Blender bundled successfully at ./blender/blender.exe"
+            Get-ChildItem ./blender -Recurse -File | Select-Object FullName, Length
+          } else {
+            Write-Host "ERROR: blender.exe NOT found after setup"
+            exit 1
+          }
 
-      - name: Verify Blender
+      - name: Verify bundle structure
         run: |
-          if (Test-Path "./blender/blender.exe") { echo "Blender found" } else { echo "Blender NOT found"; exit 1 }          
+          if [ -f "./blender/blender.exe" ]; then
+            echo "PASS: ./blender/blender.exe exists"
+            ls -la ./blender/blender.exe
+          else
+            echo "FAIL: ./blender/blender.exe not found"
+            exit 1
+          fi
 
-      - name: Build EXE
+      - name: Build EXE with PyInstaller
         run: |
+          echo "=== PyInstaller spec ==="
+          cat converter.spec
+          echo "=== Running PyInstaller ==="
           python -m PyInstaller converter.spec --noconfirm 2>&1
           if ($LASTEXITCODE -ne 0) {
-            echo "SPEC FAILED, trying onefile..."
+            echo "SPEC FAILED, trying onefile fallback..."
             python -m PyInstaller converter_gui.py --onefile --noconfirm --console 2>&1
-          }          
+          }
+
+      - name: Verify dist output
+        run: |
+          echo "=== Contents of dist/ ==="
+          Get-ChildItem ./dist -Recurse | Select-Object FullName, Length | Format-Table -AutoSize
+          if (Test-Path "./dist/STP2GLB_Converter/blender/blender.exe") {
+            echo "PASS: Blender bundled in EXE at dist/STP2GLB_Converter/blender/blender.exe"
+          } elseif (Test-Path "./dist/blender/blender.exe") {
+            echo "PASS: Blender at dist/blender/blender.exe"
+          } else {
+            echo "WARNING: blender.exe not in dist/ - it may be embedded in the EXE"
+          }
 
       - name: Upload artifact
         if: success()
