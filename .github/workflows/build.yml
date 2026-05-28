@@ -47,14 +47,15 @@ jobs:
           }
 
       - name: Verify bundle structure
+        shell: pwsh
         run: |
-          if [ -f "./blender/blender.exe" ]; then
-            echo "PASS: ./blender/blender.exe exists"
-            ls -la ./blender/blender.exe
-          else
-            echo "FAIL: ./blender/blender.exe not found"
+          if (Test-Path "./blender/blender.exe") {
+            Write-Host "PASS: ./blender/blender.exe exists"
+            Get-Item "./blender/blender.exe" | Select-Object FullName, Length
+          } else {
+            Write-Host "FAIL: ./blender/blender.exe not found"
             exit 1
-          fi
+          }
 
       - name: Build EXE with PyInstaller
         run: |
