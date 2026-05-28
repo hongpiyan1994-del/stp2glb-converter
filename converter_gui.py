@@ -143,7 +143,15 @@ def convert_stp_to_glb(stp_path, output_glb_path, blender_exe, status_callback):
     if not blender_exe or not Path(blender_exe).exists():
         return False, "blender.exe 未找到: " + str(blender_exe)
 
-    stp_esc = stp_path.replace("\\", "\\\\")
+    # ─── 核心修复：中文路径会导致 Blender --background 崩溃
+    # 将 STP 文件复制到临时纯 ASCII 路径，避免 Blender 读取失败
+    import tempfile, shutil
+    stp_basename = Path(stp_path).name
+    tmp_stp = Path(tempfile.gettempdir()) / ("stp2glb_" + stp_basename.replace(" ", "_").replace("%", "_"))
+    shutil.copy2(stp_path, tmp_stp)
+    status_callback("STEP 文件已复制到临时路径（去除中文）")
+
+    tmp_stp_ascii = str(tmp_stp)  # now pure ASCII
     out_esc = output_glb_path.replace("\\", "\\\\")
 
     lines = [
@@ -163,26 +171,41 @@ def convert_stp_to_glb(stp_path, output_glb_path, blender_exe, status_callback):
         "else:\n",
         "    print('NO STEP ADDON FOUND')\n",
         "print('STEP_ADDON_DONE')\n",
+        "# Check scene state before import\n",
+        "print('SCENE_OBJECTS_BEFORE:', [o.name for o in bpy.data.objects])\n",
+        "# Delete default cube if present\n",
         "bpy.ops.object.select_all(action='SELECT')\n",
         "bpy.ops.object.delete(use_global=False)\n",
-        ("stp_path = r'%s'\n" % stp_esc) + "print('ABOUT_TO_IMPORT')\n",
+        "print('SCENE_CLEANED')\n",
+        "stp_path = r'%s'\n" % tmp_stp_ascii.replace("\\", "\\\\"),
+        "print('ABOUT_TO_IMPORT:' + stp_path)\n",
+        "# Force sys.stdout flush to ensure print appears immediately\n",
+        "import sys as _sys\n",
+        "_sys.stdout.flush()\n",
         "try:\n",
-        "    bpy.ops.import_mesh.step(filepath=stp_path)\n",
-        "    print('IMPORT_OK')\n",
+        "    result = bpy.ops.import_mesh.step(filepath=stp_path)\n",
+        "    print('IMPORT_RESULT:', result)\n",
+        "    print('IMPORT_OK' if result == {'FINISHED'} else 'IMPORT_FAILED:' + str(result))\n",
         "except Exception as e:\n",
         "    print('IMPORT_ERROR:' + str(e))\n",
-        "    sys.exit(1)\n",
+        "    _sys.stdout.flush()\n",
+        "    _sys.exit(1)\n",
+        "_sys.stdout.flush()\n",
         "print('IMPORT_DONE')\n",
+        "print('SCENE_OBJECTS_AFTER:', [o.name for o in bpy.data.objects])\n",
         "bpy.ops.object.select_all(action='SELECT')\n",
-        ("out_path = r'%s'\n" % out_esc),
+        "out_path = r'%s'\n" % out_esc,
+        "print('ABOUT_TO_EXPORT:' + out_path)\n",
+        "_sys.stdout.flush()\n",
         "try:\n",
-        "    bpy.ops.export_scene.gltf(filepath=out_path, export_format='GLB',\n",
+        "    result = bpy.ops.export_scene.gltf(filepath=out_path, export_format='GLB',\n",
         "        export_draco=0, export_materials='EXPORT',\n",
         "        export_colors=True, use_selection=False)\n",
-        "    print('CONVERT_SUCCESS')\n",
+        "    print('EXPORT_RESULT:', result)\n",
+        "    print('CONVERT_SUCCESS' if result == {'FINISHED'} else 'EXPORT_FAILED:' + str(result))\n",
         "except Exception as e:\n",
         "    print('EXPORT_ERROR:' + str(e))\n",
-        "    sys.exit(1)\n",
+        "    _sys.exit(1)\n",
     ]
     script = "".join(lines)
     script_path = output_glb_path + ".pyconvert"
@@ -195,7 +218,7 @@ def convert_stp_to_glb(stp_path, output_glb_path, blender_exe, status_callback):
         log("SCRIPT_LINE%d: %s" % (i, repr(line[:80])))
     log("SCRIPT_CONTENT_END")
 
-    log("Blender: " + blender_exe + " STP: " + stp_path + " SCRIPT: " + script_path)
+    log("Blender: " + blender_exe + " STP: " + tmp_stp_ascii + " SCRIPT: " + script_path)
 
     try:
         p = subprocess.Popen(
@@ -223,6 +246,28 @@ def convert_stp_to_glb(stp_path, output_glb_path, blender_exe, status_callback):
             pass
 
         log("Blender rc=" + str(rc) + " stdout_lines=" + str(out_lines))
+
+        # ─── 核心修复：rc=0 不代表转换成功！必须检查关键标记 ───
+        # Blender --background 在 import 失败时也可能 rc=0（Blender 内部捕获了异常）
+        # 所以必须检查 stdout 里有没有 'IMPORT_OK' 和 'CONVERT_SUCCESS'
+        if 'IMPORT_OK' not in out_lines:
+            # 找到具体失败原因
+            for line in out_lines:
+                if line.startswith('IMPORT_ERROR:'):
+                    return False, 'STP 导入失败: ' + line.split('IMPORT_ERROR:', 1)[1]
+                if line.startswith('NO STEP ADDON FOUND'):
+                    return False, 'STEP 插件未找到，请安装 Blender STEP 插件或使用 CadQuery 版本'
+                if line.startswith('IMPORT_FAILED:'):
+                    return False, 'STP 导入返回失败: ' + line.split('IMPORT_FAILED:', 1)[1]
+            return False, 'STP 导入阶段无输出，可能是路径含中文或文件损坏。stdout: ' + str(out_lines[:5])
+
+        if 'CONVERT_SUCCESS' not in out_lines:
+            for line in out_lines:
+                if line.startswith('EXPORT_ERROR:'):
+                    return False, 'GLB 导出失败: ' + line.split('EXPORT_ERROR:', 1)[1]
+                if line.startswith('EXPORT_FAILED:'):
+                    return False, 'GLB 导出返回失败: ' + line.split('EXPORT_FAILED:', 1)[1]
+            return False, 'GLB 导出阶段失败。stdout: ' + str(out_lines)
 
         if rc != 0:
             msg = "\n".join(out_lines + [stderr])
